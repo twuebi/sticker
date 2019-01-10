@@ -82,7 +82,11 @@ fn main() {
         .embeddings
         .load_embeddings()
         .or_exit("Cannot load embeddings", 1);
-    let vectorizer = SentVectorizer::new(embeddings);
+    let vectorizer = SentVectorizer::new(
+        embeddings,
+        config.affixes.prefix_len,
+        config.affixes.suffix_len,
+    );
 
     let mut collector = NoopCollector::new(labels, vectorizer);
 
@@ -95,13 +99,21 @@ fn main() {
 
     write_labels(&config, collector.labels()).or_exit("Cannot write labels", 1);
 
+    let char_embed_dims = collector
+        .vectorizer()
+        .layer_embeddings()
+        .char_embeddings()
+        .dims();
+
     let shapes = Shapes {
         n_labels: collector.labels().len(),
         token_embed_dims: collector
             .vectorizer()
             .layer_embeddings()
             .token_embeddings()
-            .dims(),
+            .dims()
+            + config.affixes.prefix_len * char_embed_dims
+            + config.affixes.suffix_len * char_embed_dims,
     };
 
     write!(

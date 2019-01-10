@@ -75,7 +75,11 @@ fn main() {
         .embeddings
         .load_embeddings()
         .or_exit("Cannot load embeddings", 1);
-    let vectorizer = SentVectorizer::new(embeddings);
+    let vectorizer = SentVectorizer::new(
+        embeddings,
+        config.affixes.prefix_len,
+        config.affixes.suffix_len,
+    );
 
     let graph_reader = File::open(&config.model.graph).or_exit(
         format!(

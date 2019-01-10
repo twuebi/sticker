@@ -326,8 +326,12 @@ impl Tag for Tagger {
             .unwrap_or(0);
 
         let token_dims = self.vectorizer.layer_embeddings().token_embeddings().dims();
+        let char_dims = self.vectorizer.layer_embeddings().char_embeddings().dims();
+        let dims = token_dims
+            + self.vectorizer.prefix_len() * char_dims
+            + self.vectorizer.suffix_len() * char_dims;
 
-        let mut builder = TensorBuilder::new(sentences.len(), max_seq_len, token_dims);
+        let mut builder = TensorBuilder::new(sentences.len(), max_seq_len, dims);
 
         // Fill the batch.
         for sentence in sentences {

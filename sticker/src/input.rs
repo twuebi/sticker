@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::cmp;
+use std::iter;
 
 use conllx::Sentence;
 use failure::Error;
@@ -103,7 +105,7 @@ impl SentVec {
     /// Get the embedding representation of a sentence.
     ///
     /// The vector contains the concatenation of the embeddings of the
-    /// tokens in the sentence.
+    /// tokens and their affixes.
     pub fn into_inner(self) -> Vec<f32> {
         self.tokens
     }
@@ -115,14 +117,21 @@ impl SentVec {
 /// annotation layers: tokens and part-of-speech.
 pub struct LayerEmbeddings {
     token_embeddings: Embeddings,
+    char_embeddings: Embeddings,
 }
 
 impl LayerEmbeddings {
     /// Construct `LayerEmbeddings` from the given embeddings.
-    pub fn new(token_embeddings: Embeddings) -> Self {
+    pub fn new(token_embeddings: Embeddings, char_embeddings: Embeddings) -> Self {
         LayerEmbeddings {
             token_embeddings: token_embeddings,
+            char_embeddings: char_embeddings,
         }
+    }
+
+    /// Get the character embedding matrix.
+    pub fn char_embeddings(&self) -> &Embeddings {
+        &self.char_embeddings
     }
 
     /// Get the token embedding matrix.
@@ -135,6 +144,8 @@ impl LayerEmbeddings {
 ///
 /// An `SentVectorizer` vectorizes sentences.
 pub struct SentVectorizer {
+    prefix_len: usize,
+    suffix_len: usize,
     layer_embeddings: LayerEmbeddings,
 }
 
@@ -144,15 +155,25 @@ impl SentVectorizer {
     /// The vectorizer is constructed from the embedding matrices. The layer
     /// embeddings are used to find the indices into the embedding matrix for
     /// layer values.
-    pub fn new(layer_embeddings: LayerEmbeddings) -> Self {
+    pub fn new(layer_embeddings: LayerEmbeddings, prefix_len: usize, suffix_len: usize) -> Self {
         SentVectorizer {
-            layer_embeddings: layer_embeddings,
+            layer_embeddings,
+            prefix_len,
+            suffix_len,
         }
     }
 
     /// Get the layer embeddings.
     pub fn layer_embeddings(&self) -> &LayerEmbeddings {
         &self.layer_embeddings
+    }
+
+    pub fn prefix_len(&self) -> usize {
+        self.prefix_len
+    }
+
+    pub fn suffix_len(&self) -> usize {
+        self.suffix_len
     }
 
     /// Vectorize a sentence.
@@ -162,9 +183,39 @@ impl SentVectorizer {
         for token in sentence {
             let form = token.form();
 
+            // Add the word embedding.
             input
                 .tokens
                 .extend_from_slice(&self.layer_embeddings.token_embeddings.embedding(form));
+
+            // If the prefix length is 3 Suffix Length is 4, we want to encode 'zu' as:
+            //
+            // 'z' 'u' 0 0 0 'z' 'u'
+            let mut chars = vec!['\0'; self.prefix_len + self.suffix_len];
+
+            let form_chars = form.chars().collect::<Vec<_>>();
+            let prefix_len = cmp::min(self.prefix_len, form_chars.len());
+            chars[..prefix_len].copy_from_slice(&form_chars[0..prefix_len]);
+
+            let suffix_len = cmp::min(self.suffix_len, form_chars.len());
+            let chars_len = chars.len();
+            chars[chars_len - suffix_len..]
+                .copy_from_slice(&form_chars[form_chars.len() - suffix_len..]);
+
+            for ch in chars {
+                if ch == '\0' {
+                    // Pad with zeros when the charater is absent.
+                    input.tokens.extend(
+                        iter::repeat(0.).take(self.layer_embeddings.char_embeddings.dims()),
+                    );
+                } else {
+                    let ch_embed = self
+                        .layer_embeddings
+                        .char_embeddings
+                        .embedding(&ch.to_string());
+                    input.tokens.extend_from_slice(&ch_embed);
+                };
+            }
         }
 
         Ok(input)
