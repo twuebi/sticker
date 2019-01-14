@@ -28,6 +28,8 @@ impl Config {
         let config_path = config_path.as_ref();
 
         self.labeler.labels = relativize_path(config_path, &self.labeler.labels)?;
+        *self.embeddings.character.filename_mut() =
+            relativize_path(config_path, &self.embeddings.character.filename_mut())?;
         *self.embeddings.word.filename_mut() =
             relativize_path(config_path, &self.embeddings.word.filename_mut())?;
         self.model.graph = relativize_path(config_path, &self.model.graph)?;
@@ -39,6 +41,7 @@ impl Config {
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Embeddings {
+    pub character: Embedding,
     pub word: Embedding,
 }
 
@@ -63,7 +66,8 @@ impl Embedding {
 impl Embeddings {
     pub fn load_embeddings(&self) -> Result<LayerEmbeddings, Error> {
         let token_embeddings = self.load_layer_embeddings(&self.word)?;
-        Ok(LayerEmbeddings::new(token_embeddings))
+        let char_embeddings = self.load_layer_embeddings(&self.character)?;
+        Ok(LayerEmbeddings::new(token_embeddings, char_embeddings))
     }
 
     pub fn load_layer_embeddings(

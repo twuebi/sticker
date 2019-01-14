@@ -31,6 +31,7 @@ use sticker_utils::{CborWrite, Config, TomlRead};
 #[derive(Serialize)]
 struct Shapes {
     n_labels: usize,
+    char_embed_dims: usize,
     token_embed_dims: usize,
 }
 
@@ -97,6 +98,11 @@ fn main() {
 
     let shapes = Shapes {
         n_labels: collector.labels().len(),
+        char_embed_dims: collector
+            .vectorizer()
+            .layer_embeddings()
+            .char_embeddings()
+            .dims(),
         token_embed_dims: collector
             .vectorizer()
             .layer_embeddings()

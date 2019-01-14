@@ -154,13 +154,31 @@ fn run_epoch(
 
     for i in 0..tensors.labels.len() {
         let seq_lens = &tensors.sequence_lens[i];
+        let subwords = &tensors.subwords[i];
+        let subword_seq_lens = &tensors.subword_seq_lens[i];
+        let token_subword = &tensors.token_subword[i];
         let tokens = &tensors.tokens[i];
         let labels = &tensors.labels[i];
 
         let batch_perf = if is_training {
-            tagger.train(seq_lens, tokens, labels, lr)
+            tagger.train(
+                seq_lens,
+                subwords,
+                subword_seq_lens,
+                token_subword,
+                tokens,
+                labels,
+                lr,
+            )
         } else {
-            tagger.validate(seq_lens, tokens, labels)
+            tagger.validate(
+                seq_lens,
+                subwords,
+                subword_seq_lens,
+                token_subword,
+                tokens,
+                labels,
+            )
         };
 
         let n_tokens = seq_lens.iter().sum::<i32>();

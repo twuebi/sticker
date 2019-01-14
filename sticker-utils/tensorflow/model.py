@@ -83,6 +83,24 @@ class Model:
         self._seq_lens = tf.placeholder(
             tf.int32, [None], name="seq_lens")
 
+        self._subwords = tf.placeholder(
+            tf.float32,
+            shape=[
+                None,
+                None,
+                self.shapes['char_embed_dims']],
+            name="subwords");
+
+        self._subword_seq_lens = tf.placeholder(
+            tf.int32, [None], name="subword_seq_lens")
+
+        self._token_subword = tf.placeholder(
+            tf.int32,
+            shape = [
+                None,
+                None],
+            name="token_subword")
+
         # Compute mask
         self._mask = tf.sequence_mask(
             self.seq_lens, maxlen=tf.shape(
@@ -103,6 +121,18 @@ class Model:
     @property
     def seq_lens(self):
         return self._seq_lens
+
+    @property
+    def subwords(self):
+        return self._subwords
+
+    @property
+    def subword_seq_lens(self):
+        return self._subword_seq_lens
+
+    @property
+    def token_subword(self):
+        return self._token_subword
 
     @property
     def tags(self):

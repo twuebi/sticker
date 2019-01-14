@@ -66,14 +66,35 @@ class RNNModel(Model):
 
         self.setup_placeholders()
 
+        # Subword representations.
+        subwords = tf.contrib.layers.dropout(
+            self.subwords,
+            keep_prob=config.keep_prob_input,
+            is_training=self.is_training)
+        with tf.variable_scope("char-rnn"):
+            _, (fstate, bstate) = rnn_layers(
+                self.is_training,
+                subwords,
+                num_layers=1,
+                output_size=100,
+                output_dropout=config.keep_prob,
+                state_dropout=config.keep_prob,
+                seq_lens=self.subword_seq_lens,
+                bidirectional=True,
+                gru=config.gru)
+        subword_reprs = tf.concat([fstate.h, bstate.h], axis=1)
+        subword_reprs = tf.nn.embedding_lookup(subword_reprs, self.token_subword)
+
         inputs = tf.contrib.layers.dropout(
             self.tokens,
             keep_prob=config.keep_prob_input,
             is_training=self.is_training)
 
+        word_reprs = tf.concat([inputs, subword_reprs], axis=2)
+
         (fstates, bstates), _ = rnn_layers(
             self.is_training,
-            inputs,
+            word_reprs,
             num_layers=1,
             output_size=config.hidden_size,
             output_dropout=config.keep_prob,

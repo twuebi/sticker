@@ -50,6 +50,10 @@ pub struct OpNames {
     pub is_training_op: String,
     pub lr_op: String,
 
+    pub subwords_op: String,
+    pub subword_seq_lens_op: String,
+    pub token_subword_op: String,
+
     pub tokens_op: String,
     pub seq_lens_op: String,
 
@@ -73,6 +77,11 @@ pub struct Tagger {
     save_path_op: Operation,
     lr_op: Operation,
     is_training_op: Operation,
+
+    subwords_op: Operation,
+    subword_seq_lens_op: Operation,
+    token_subword_op: Operation,
+
     tokens_op: Operation,
     seq_lens_op: Operation,
 
@@ -168,6 +177,10 @@ impl Tagger {
         let is_training_op = Self::add_op(&graph, &op_names.is_training_op)?;
         let lr_op = Self::add_op(&graph, &op_names.lr_op)?;
 
+        let subwords_op = Self::add_op(&graph, &op_names.subwords_op)?;
+        let subword_seq_lens_op = Self::add_op(&graph, &op_names.subword_seq_lens_op)?;
+        let token_subword_op = Self::add_op(&graph, &op_names.token_subword_op)?;
+
         let tokens_op = Self::add_op(&graph, &op_names.tokens_op)?;
         let seq_lens_op = Self::add_op(&graph, &op_names.seq_lens_op)?;
 
@@ -190,6 +203,11 @@ impl Tagger {
             save_path_op,
             is_training_op,
             lr_op,
+
+            subwords_op,
+            subword_seq_lens_op,
+            token_subword_op,
+
             tokens_op,
             seq_lens_op,
 
@@ -228,6 +246,9 @@ impl Tagger {
     fn tag_sequences(
         &mut self,
         seq_lens: &Tensor<i32>,
+        subwords: &Tensor<f32>,
+        subword_seq_lens: &Tensor<i32>,
+        token_subword: &Tensor<i32>,
         tokens: &Tensor<f32>,
     ) -> Result<Tensor<i32>, Error> {
         let mut is_training = Tensor::new(&[]);
@@ -238,6 +259,9 @@ impl Tagger {
         args.add_feed(&self.is_training_op, 0, &is_training);
 
         // Sequence inputs
+        args.add_feed(&self.subwords_op, 0, subwords);
+        args.add_feed(&self.subword_seq_lens_op, 0, subword_seq_lens);
+        args.add_feed(&self.token_subword_op, 0, token_subword);
         args.add_feed(&self.seq_lens_op, 0, seq_lens);
         args.add_feed(&self.tokens_op, 0, tokens);
 
@@ -251,6 +275,9 @@ impl Tagger {
     pub fn validate(
         &mut self,
         seq_lens: &Tensor<i32>,
+        subwords: &Tensor<f32>,
+        subword_seq_lens: &Tensor<i32>,
+        token_subword: &Tensor<i32>,
         tokens: &Tensor<f32>,
         labels: &Tensor<i32>,
     ) -> ModelPerformance {
@@ -261,12 +288,23 @@ impl Tagger {
 
         args.add_feed(&self.is_training_op, 0, &is_training);
 
-        self.validate_(seq_lens, tokens, labels, args)
+        self.validate_(
+            seq_lens,
+            subwords,
+            subword_seq_lens,
+            token_subword,
+            tokens,
+            labels,
+            args,
+        )
     }
 
     pub fn train(
         &mut self,
         seq_lens: &Tensor<i32>,
+        subwords: &Tensor<f32>,
+        subword_seq_lens: &Tensor<i32>,
+        token_subword: &Tensor<i32>,
         tokens: &Tensor<f32>,
         labels: &Tensor<i32>,
         learning_rate: f32,
@@ -282,17 +320,31 @@ impl Tagger {
         args.add_feed(&self.lr_op, 0, &lr);
         args.add_target(&self.train_op);
 
-        self.validate_(seq_lens, tokens, labels, args)
+        self.validate_(
+            seq_lens,
+            subwords,
+            subword_seq_lens,
+            token_subword,
+            tokens,
+            labels,
+            args,
+        )
     }
 
     fn validate_<'l>(
         &'l mut self,
         seq_lens: &'l Tensor<i32>,
+        subwords: &'l Tensor<f32>,
+        subword_seq_lens: &'l Tensor<i32>,
+        token_subword: &'l Tensor<i32>,
         tokens: &'l Tensor<f32>,
         labels: &'l Tensor<i32>,
         mut args: SessionRunArgs<'l>,
     ) -> ModelPerformance {
         // Add inputs.
+        args.add_feed(&self.subwords_op, 0, subwords);
+        args.add_feed(&self.subword_seq_lens_op, 0, subword_seq_lens);
+        args.add_feed(&self.token_subword_op, 0, token_subword);
         args.add_feed(&self.tokens_op, 0, tokens);
         args.add_feed(&self.seq_lens_op, 0, seq_lens);
 
@@ -325,9 +377,31 @@ impl Tag for Tagger {
             .max()
             .unwrap_or(0);
 
-        let token_dims = self.vectorizer.layer_embeddings().token_embeddings().dims();
+        let max_subword_len = sentences
+            .iter()
+            .map(|s| {
+                s.as_ref()
+                    .iter()
+                    .map(|t| t.form().chars().count())
+                    .max()
+                    .unwrap_or(0)
+            })
+            .max()
+            .unwrap_or(0);
 
-        let mut builder = TensorBuilder::new(sentences.len(), max_seq_len, token_dims);
+        let n_tokens = sentences.iter().map(|s| s.as_ref().len()).sum();
+
+        let token_dims = self.vectorizer.layer_embeddings().token_embeddings().dims();
+        let char_dims = self.vectorizer.layer_embeddings().char_embeddings().dims();
+
+        let mut builder = TensorBuilder::new(
+            sentences.len(),
+            n_tokens,
+            max_seq_len,
+            max_subword_len,
+            token_dims,
+            char_dims,
+        );
 
         // Fill the batch.
         for sentence in sentences {
@@ -336,7 +410,13 @@ impl Tag for Tagger {
         }
 
         // Tag the batch
-        let tag_tensor = self.tag_sequences(builder.seq_lens(), builder.tokens())?;
+        let tag_tensor = self.tag_sequences(
+            builder.seq_lens(),
+            builder.subwords(),
+            builder.subword_seq_lens(),
+            builder.token_subword(),
+            builder.tokens(),
+        )?;
 
         // Convert label numbers to labels.
         let numberer = &self.labels;

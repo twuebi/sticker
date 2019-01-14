@@ -85,18 +85,23 @@ impl From<rust2vec::Embeddings> for Embeddings {
 /// sequence labeling graph.
 pub struct SentVec {
     pub tokens: Vec<f32>,
+    pub subwords: Vec<Vec<f32>>,
 }
 
 impl SentVec {
     /// Construct a new sentence vector.
     pub fn new() -> Self {
-        SentVec { tokens: Vec::new() }
+        SentVec {
+            tokens: Vec::new(),
+            subwords: Vec::new(),
+        }
     }
 
     /// Construct a sentence vector with the given capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         SentVec {
             tokens: Vec::with_capacity(capacity),
+            subwords: Vec::with_capacity(capacity),
         }
     }
 
@@ -104,8 +109,8 @@ impl SentVec {
     ///
     /// The vector contains the concatenation of the embeddings of the
     /// tokens in the sentence.
-    pub fn into_inner(self) -> Vec<f32> {
-        self.tokens
+    pub fn into_inner(self) -> (Vec<Vec<f32>>, Vec<f32>) {
+        (self.subwords, self.tokens)
     }
 }
 
@@ -115,14 +120,21 @@ impl SentVec {
 /// annotation layers: tokens and part-of-speech.
 pub struct LayerEmbeddings {
     token_embeddings: Embeddings,
+    char_embeddings: Embeddings,
 }
 
 impl LayerEmbeddings {
     /// Construct `LayerEmbeddings` from the given embeddings.
-    pub fn new(token_embeddings: Embeddings) -> Self {
+    pub fn new(token_embeddings: Embeddings, char_embeddings: Embeddings) -> Self {
         LayerEmbeddings {
             token_embeddings: token_embeddings,
+            char_embeddings: char_embeddings,
         }
+    }
+
+    /// Get the character embedding matrix.
+    pub fn char_embeddings(&self) -> &Embeddings {
+        &self.char_embeddings
     }
 
     /// Get the token embedding matrix.
@@ -165,6 +177,18 @@ impl SentVectorizer {
             input
                 .tokens
                 .extend_from_slice(&self.layer_embeddings.token_embeddings.embedding(form));
+
+            let mut char_embeds = Vec::new();
+            for ch in form.chars() {
+                char_embeds.extend_from_slice(
+                    &self
+                        .layer_embeddings
+                        .char_embeddings
+                        .embedding(&ch.to_string()),
+                );
+            }
+
+            input.subwords.push(char_embeds);
         }
 
         Ok(input)
