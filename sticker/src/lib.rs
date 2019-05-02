@@ -1,6 +1,9 @@
 mod collector;
 pub use crate::collector::{Collector, NoopCollector};
 
+mod dataset;
+pub use dataset::{ConllxDataset, Dataset};
+
 mod encoder;
 pub use crate::encoder::{EncodingProb, LayerEncoder, SentenceDecoder, SentenceEncoder};
 
