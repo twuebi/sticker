@@ -16,3 +16,5 @@ mod tag;
 pub use crate::tag::{Layer, LayerValue, ModelPerformance, Tag};
 
 pub mod tensorflow;
+
+pub mod torch;
