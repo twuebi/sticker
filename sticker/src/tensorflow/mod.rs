@@ -1,5 +1,8 @@
 mod collector;
-pub use self::collector::{CollectedTensors, TensorCollector};
+pub use self::collector::CollectedTensors;
+
+mod dataset;
+pub use dataset::{ConllxDataSet, DataSet};
 
 mod lr;
 pub use self::lr::{
