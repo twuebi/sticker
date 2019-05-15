@@ -77,7 +77,7 @@ where
 
         let mut seq_lens = Vec::new();
         for (batch_idx, (inputs, labels)) in cur_inputs.into_iter().zip(cur_labels).enumerate() {
-            let input_tensor =
+            let mut input_tensor =
                 batch_inputs
                     .narrow(0, batch_idx as i64, 1)
                     .narrow(1, 0, labels.len() as i64);
@@ -87,7 +87,7 @@ where
                 input_dims,
             ]));
 
-            let label_tensor =
+            let mut label_tensor =
                 batch_labels
                     .narrow(0, batch_idx as i64, 1)
                     .narrow(1, 0, labels.len() as i64);

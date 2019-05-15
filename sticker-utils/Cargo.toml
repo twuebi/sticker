@@ -20,7 +20,7 @@ serde = "1"
 serde_cbor = "0.9"
 serde_derive = "1"
 stdinout = "0.4"
-tch = "0"
+tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "4395560" }
 threadpool = "1"
 toml = "0.5"
 sticker = { path = "../sticker" }

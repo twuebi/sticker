@@ -21,7 +21,7 @@ petgraph = "0.4"
 protobuf = "1"
 serde = "1"
 serde_derive = "1"
-tch = "0.0"
+tch = { git = "https://github.com/LaurentMazare/tch-rs.git", rev = "4395560" }
 tf-proto = { git = "https://github.com/danieldk/tf-proto-rs", tag = "v1.4.0" }
 tensorflow = "0.13"
 
