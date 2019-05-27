@@ -8,8 +8,6 @@ use tensorflow::{Session, SessionOptions, SessionRunArgs, Tensor};
 use super::tagger::TaggerGraph;
 use super::util::{prepare_path, status_to_error};
 use crate::ModelPerformance;
-use crate::tensorflow::tensor::TensorBuilder;
-use tf_proto::{TaggedRunMetadata, Event};
 
 /// Trainer for a sequence labeling model.
 pub struct TaggerTrainer {

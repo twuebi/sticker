@@ -15,8 +15,7 @@ use serde_derive::{Deserialize, Serialize};
 use tensorflow::{
     Graph, ImportGraphDefOptions, Operation, Session, SessionOptions, SessionRunArgs, Tensor,
 };
-use tf_proto::{ConfigProto, RunOptions, RunOptions_TraceLevel};
-use tf_proto::RunMetadata;
+use tf_proto::ConfigProto;
 use super::tensor::{NoLabels, TensorBuilder};
 use super::util::{prepare_path, status_to_error};
 use crate::encoder::{CategoricalEncoder, SentenceDecoder};
