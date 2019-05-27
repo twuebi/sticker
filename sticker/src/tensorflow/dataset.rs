@@ -91,7 +91,9 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let sentences = self
             .sentences
-            .by_ref().map(|x| x.unwrap()).filter(|x| x.len() < 150)
+            .by_ref()
+            .map(|x| x.unwrap())
+            .filter(|x| x.len() < 150)
             .take(self.batch_size)
             .collect::<Vec<_>>();
 

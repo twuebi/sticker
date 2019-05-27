@@ -23,7 +23,9 @@ stdinout = "0.4"
 threadpool = "1"
 toml = "0.5"
 sticker = { path = "../sticker" }
-tensorflow = "0.13"
+tensorflow = { git = "https://github.com/twuebi/rust.git", branch = "run_with_metadata"}
+tf-proto = { path = "../tf-proto" }
+protobuf = "2"
 
 [dev-dependencies]
 lazy_static = "1"

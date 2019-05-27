@@ -10,6 +10,17 @@ mod cluster;
 #[allow(renamed_and_removed_lints)]
 mod config;
 pub use crate::config::ConfigProto;
+pub use crate::config::RunMetadata;
+pub use crate::config::RunOptions;
+pub use crate::config::RunOptions_TraceLevel;
+
+#[allow(renamed_and_removed_lints)]
+mod event;
+pub use crate::event::Event;
+pub use crate::event::TaggedRunMetadata;
+
+#[allow(renamed_and_removed_lints)]
+mod summary;
 
 #[allow(renamed_and_removed_lints)]
 mod cost_graph;

@@ -15,14 +15,14 @@ failure = "0.1"
 finalfusion = "0.5"
 itertools = "0.8"
 ndarray = "0.12"
-ndarray-tensorflow = "0.2"
+ndarray-tensorflow = { path = "../ndarray-tensorflow/"}
 ordered-float = "1"
 petgraph = "0.4"
 protobuf = "2"
 serde = "1"
 serde_derive = "1"
 tf-proto = { path = "../tf-proto" }
-tensorflow = "0.13"
+tensorflow = { git = "https://github.com/twuebi/rust.git", branch = "run_with_metadata"}
 
 [dev-dependencies]
 approx = "0.3"

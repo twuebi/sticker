@@ -5,6 +5,10 @@ use std::io::Read;
 use std::iter::FromIterator;
 use std::path::Path;
 
+use super::tensor::{NoLabels, TensorBuilder};
+use super::util::{prepare_path, status_to_error};
+use crate::encoder::{CategoricalEncoder, SentenceDecoder};
+use crate::{EncodingProb, SentVectorizer, Tag};
 use conllx::graph::Sentence;
 use failure::{Error, Fallible};
 use itertools::Itertools;
@@ -15,12 +19,7 @@ use serde_derive::{Deserialize, Serialize};
 use tensorflow::{
     Graph, ImportGraphDefOptions, Operation, Session, SessionOptions, SessionRunArgs, Tensor,
 };
-use tf_proto::{ConfigProto, RunOptions, RunOptions_TraceLevel};
-use tf_proto::RunMetadata;
-use super::tensor::{NoLabels, TensorBuilder};
-use super::util::{prepare_path, status_to_error};
-use crate::encoder::{CategoricalEncoder, SentenceDecoder};
-use crate::{EncodingProb, SentVectorizer, Tag};
+use tf_proto::ConfigProto;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -83,6 +82,11 @@ mod op_names {
 
     pub const VAL_SUMMARIES_OP: &str = "model/summaries/val";
     pub const TRAIN_SUMMARIES_OP: &str = "model/summaries/train";
+
+    pub const METADATA_WRITE_OP: &str = "metadata_write";
+    pub const METADATA_INPUT_OP: &str = "metadata_input";
+    pub const TRAIN_STEP_OP: &str = "model/global_step";
+    pub const VAL_STEP_OP: &str = "model/val_gs";
 }
 
 pub struct TaggerGraph {
@@ -94,6 +98,10 @@ pub struct TaggerGraph {
     pub(crate) summary_init_op: Operation,
     pub(crate) train_summary_op: Operation,
     pub(crate) val_summary_op: Operation,
+    pub(crate) metadata_write_op: Operation,
+    pub(crate) metadata_input_op: Operation,
+    pub(crate) train_step_op: Operation,
+    pub(crate) val_step_op: Operation,
 
     pub(crate) init_op: Operation,
     pub(crate) restore_op: Operation,
@@ -153,6 +161,12 @@ impl TaggerGraph {
         let train_summary_op = Self::add_op(&graph, op_names::TRAIN_SUMMARIES_OP)?;
         let val_summary_op = Self::add_op(&graph, op_names::VAL_SUMMARIES_OP)?;
 
+        let metadata_input_op = Self::add_op(&graph, op_names::METADATA_INPUT_OP)?;
+        let metadata_write_op = Self::add_op(&graph, op_names::METADATA_WRITE_OP)?;
+
+        let train_step_op = Self::add_op(&graph, op_names::TRAIN_STEP_OP)?;
+        let val_step_op = Self::add_op(&graph, op_names::VAL_STEP_OP)?;
+
         Ok(TaggerGraph {
             graph,
             model_config: model_config.clone(),
@@ -163,6 +177,12 @@ impl TaggerGraph {
 
             train_summary_op,
             val_summary_op,
+
+            train_step_op,
+            val_step_op,
+
+            metadata_input_op,
+            metadata_write_op,
 
             init_op,
             restore_op,

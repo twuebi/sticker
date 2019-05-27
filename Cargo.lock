@@ -493,10 +493,9 @@ dependencies = [
 [[package]]
 name = "ndarray-tensorflow"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "ndarray 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tensorflow 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tensorflow 0.13.0 (git+https://github.com/twuebi/rust.git?branch=run_with_metadata)",
 ]
 
 [[package]]
@@ -942,13 +941,13 @@ dependencies = [
  "finalfusion 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ndarray 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "ndarray-tensorflow 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ndarray-tensorflow 0.2.0",
  "ordered-float 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "petgraph 0.4.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "protobuf 2.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.90 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.90 (registry+https://github.com/rust-lang/crates.io-index)",
- "tensorflow 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tensorflow 0.13.0 (git+https://github.com/twuebi/rust.git?branch=run_with_metadata)",
  "tf-proto 0.1.0",
 ]
 
@@ -963,12 +962,14 @@ dependencies = [
  "indicatif 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ordered-float 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "protobuf 2.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.90 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_cbor 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.90 (registry+https://github.com/rust-lang/crates.io-index)",
  "stdinout 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sticker 0.3.0",
- "tensorflow 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tensorflow 0.13.0 (git+https://github.com/twuebi/rust.git?branch=run_with_metadata)",
+ "tf-proto 0.1.0",
  "threadpool 1.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -1026,20 +1027,21 @@ dependencies = [
 [[package]]
 name = "tensorflow"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/twuebi/rust.git?branch=run_with_metadata#5f8b1f0eeaa8c169f168d968fed5394ba1de73c0"
 dependencies = [
  "aligned_alloc 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "crc 1.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "half 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.51 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-complex 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tensorflow-sys 0.16.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tensorflow-sys 0.16.0 (git+https://github.com/twuebi/rust.git?branch=run_with_metadata)",
 ]
 
 [[package]]
 name = "tensorflow-sys"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/twuebi/rust.git?branch=run_with_metadata#5f8b1f0eeaa8c169f168d968fed5394ba1de73c0"
 dependencies = [
  "curl 0.4.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "flate2 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1240,7 +1242,6 @@ dependencies = [
 "checksum miniz_oxide_c_api 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b7fe927a42e3807ef71defb191dc87d4e24479b221e67015fe38ae2b7b447bab"
 "checksum ndarray 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7cf380a8af901ad627594013a3bbac903ae0a6f94e176e47e46b5bbc1877b928"
 "checksum ndarray-parallel 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f837a5313776eac07e3361168f461e15cec093a2f4a2790a8b22de4da813f35c"
-"checksum ndarray-tensorflow 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fb10c12eff12953850064ea87349e608ae5340a7c077008bfd48e44fe7edc8ac"
 "checksum nodrop 0.1.13 (registry+https://github.com/rust-lang/crates.io-index)" = "2f9667ddcc6cc8a43afc9b7917599d7216aa09c463919ea32c59ed6cac8bc945"
 "checksum num-complex 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "107b9be86cd2481930688277b675b0114578227f034674726605b8a482d8baf8"
 "checksum num-traits 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "0b3a5d7cc97d6d30d8b9bc8fa19bf45349ffe46241e8816f50f62f6d6aaabee1"
@@ -1299,8 +1300,8 @@ dependencies = [
 "checksum synstructure 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)" = "73687139bf99285483c96ac0add482c3776528beac1d97d444f6e91f203a2015"
 "checksum tar 0.4.22 (registry+https://github.com/rust-lang/crates.io-index)" = "c2167ff53da2a661702b3299f71a91b61b1dffef36b4b2884b1f9c67254c0133"
 "checksum tempfile 3.0.7 (registry+https://github.com/rust-lang/crates.io-index)" = "b86c784c88d98c801132806dadd3819ed29d8600836c4088e855cdf3e178ed8a"
-"checksum tensorflow 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e798f185e00736e185ee1f4a15e0cc788ff01222913a4060d62ffeafde442d7e"
-"checksum tensorflow-sys 0.16.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f45e5e974e61ac7efaeb52f63d5a596cce8f2197ddde9788fcc35aca40f2ccc5"
+"checksum tensorflow 0.13.0 (git+https://github.com/twuebi/rust.git?branch=run_with_metadata)" = "<none>"
+"checksum tensorflow-sys 0.16.0 (git+https://github.com/twuebi/rust.git?branch=run_with_metadata)" = "<none>"
 "checksum termion 1.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "689a3bdfaab439fd92bc87df5c4c78417d3cbe537487274e9b0b2dce76e92096"
 "checksum termios 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)" = "72b620c5ea021d75a735c943269bb07d30c9b77d6ac6b236bc8b5c496ef05625"
 "checksum textwrap 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"

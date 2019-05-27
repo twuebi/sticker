@@ -7,10 +7,11 @@ use tensorflow::{Session, SessionOptions, SessionRunArgs, Tensor};
 
 use super::tagger::TaggerGraph;
 use super::util::{prepare_path, status_to_error};
-use crate::ModelPerformance;
-use crate::tensorflow::tensor::TensorBuilder;
-use tf_proto::{TaggedRunMetadata, Event};
 
+use crate::ModelPerformance;
+use protobuf::Message;
+
+use tf_proto::{Event, RunMetadata, RunOptions, RunOptions_TraceLevel, TaggedRunMetadata};
 /// Trainer for a sequence labeling model.
 pub struct TaggerTrainer {
     graph: TaggerGraph,
@@ -35,7 +36,11 @@ impl TaggerTrainer {
         let session = Self::new_session(&graph)?;
         session.run(&mut args).map_err(status_to_error)?;
 
-        Ok(TaggerTrainer { graph, session, summaries:false})
+        Ok(TaggerTrainer {
+            graph,
+            session,
+            summaries: false,
+        })
     }
 
     /// Create a new session with randomized weights.
@@ -48,7 +53,11 @@ impl TaggerTrainer {
             .run(&mut args)
             .expect("Cannot initialize parameters");
 
-        Ok(TaggerTrainer { graph, session, summaries:false })
+        Ok(TaggerTrainer {
+            graph,
+            session,
+            summaries: false,
+        })
     }
 
     fn new_session(graph: &TaggerGraph) -> Result<Session, Error> {
@@ -77,8 +86,7 @@ impl TaggerTrainer {
         self.session.run(&mut args).map_err(status_to_error)
     }
 
-    pub fn init_logdir(&mut self, path: &str) -> Result<(), Error>
-    {
+    pub fn init_logdir(&mut self, path: &str) -> Result<(), Error> {
         let path_tensor = path.to_string().into();
         let mut args = SessionRunArgs::new();
         args.add_feed(&self.graph.logdir_op, 0, &path_tensor);
@@ -111,7 +119,7 @@ impl TaggerTrainer {
         if self.summaries {
             args.add_target(&self.graph.train_summary_op);
         }
-        self.validate_(seq_lens, inputs, labels, args)
+        self.validate_(seq_lens, inputs, labels, args, Mode::TRAIN)
     }
 
     /// Perform validation using a batch of inputs and labels.
@@ -129,7 +137,7 @@ impl TaggerTrainer {
         if self.summaries {
             args.add_target(&self.graph.val_summary_op);
         }
-        self.validate_(seq_lens, inputs, labels, args)
+        self.validate_(seq_lens, inputs, labels, args, Mode::VALIDATE)
     }
 
     fn validate_<'l>(
@@ -138,6 +146,7 @@ impl TaggerTrainer {
         inputs: &'l NdTensor<f32, Ix3>,
         labels: &'l NdTensor<i32, Ix2>,
         mut args: SessionRunArgs<'l>,
+        mode: Mode,
     ) -> ModelPerformance {
         // Add inputs.
         args.add_feed(&self.graph.inputs_op, 0, inputs.inner_ref());
@@ -149,13 +158,73 @@ impl TaggerTrainer {
         let accuracy_token = args.request_fetch(&self.graph.accuracy_op, 0);
         let loss_token = args.request_fetch(&self.graph.loss_op, 0);
 
-        self.session.run(&mut args).expect("Cannot run graph");
+        let mut ro = RunOptions::new();
+        ro.set_trace_level(RunOptions_TraceLevel::FULL_TRACE);
 
-        ModelPerformance {
+        let mut ro_bytes = Vec::new();
+        ro.write_to_vec(&mut ro_bytes)
+            .expect("Failed serializing RunOptions proto!");
+        let train_step_token = args.request_fetch(&self.graph.train_step_op, 0);
+        let val_step_token = args.request_fetch(&self.graph.val_step_op, 0);
+
+        let metadata = self
+            .session
+            .run_with_metadata(&mut args, &ro_bytes[..])
+            .expect("Failed running graph");
+
+        let mut rm = RunMetadata::new();
+        rm.merge_from(&mut protobuf::CodedInputStream::from_bytes(&metadata))
+            .expect("Retrieving metadata failed!");
+        let mut trm = TaggedRunMetadata::new();
+        trm.set_run_metadata(metadata);
+
+        match mode {
+            Mode::TRAIN => {
+                let train_step: i64 = args
+                    .fetch(train_step_token)
+                    .expect("Unable to retrieve train step!")[0];
+                trm.set_tag(format!("train_{}", train_step));
+            }
+            Mode::VALIDATE => {
+                let val_step: i64 = args
+                    .fetch(val_step_token)
+                    .expect("Unable to retrieve val step!")[0];
+                trm.set_tag(format!("val_{}", val_step));
+            }
+        }
+
+        let mut event = Event::new();
+        event.set_tagged_run_metadata(trm);
+
+        let mp = ModelPerformance {
             loss: args.fetch(loss_token).expect("Unable to retrieve loss")[0],
             accuracy: args
                 .fetch(accuracy_token)
                 .expect("Unable to retrieve accuracy")[0],
+        };
+
+        let mut met = Vec::new();
+        event
+            .write_to_vec(&mut met)
+            .expect("Serializing metadata failed!");
+        unsafe {
+            let mut input: Tensor<String> = Tensor::new(&[]);
+            input[0] = String::from_utf8_unchecked(met);
+
+            {
+                let mut args = SessionRunArgs::new();
+
+                args.add_feed(&self.graph.metadata_input_op, 0, &input);
+                args.add_target(&self.graph.metadata_write_op);
+
+                self.session.run(&mut args).expect("fail");
+            }
         }
+        mp
     }
+}
+
+pub enum Mode {
+    TRAIN,
+    VALIDATE,
 }

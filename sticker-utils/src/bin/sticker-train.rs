@@ -27,7 +27,6 @@ static TRAIN_DATA: &str = "TRAIN_DATA";
 static VALIDATION_DATA: &str = "VALIDATION_DATA";
 static LOGDIR: &str = "LOGDIR";
 
-
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum CompletedUnit {
     /// A batch is completed.
@@ -176,7 +175,8 @@ impl TrainApp {
                     .help("Validation data")
                     .index(3)
                     .required(true),
-            ).arg(
+            )
+            .arg(
                 Arg::with_name(LOGDIR)
                     .help("Tensorboard logdir")
                     .long("logdir")
@@ -304,7 +304,7 @@ fn create_trainer(config: &Config, app: &TrainApp) -> Fallible<TaggerTrainer> {
     match &app.logdir {
         Some(logdir) => {
             trainer.init_logdir(logdir)?;
-        },
+        }
         None => {}
     };
     Ok(trainer)
