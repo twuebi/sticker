@@ -89,15 +89,11 @@ where
     type Item = Fallible<TensorBuilder<LabelTensor>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let sentences = match self
+        let sentences = self
             .sentences
-            .by_ref()
+            .by_ref().map(|x| x.unwrap()).filter(|x| x.len() < 150)
             .take(self.batch_size)
-            .collect::<Fallible<Vec<_>>>()
-        {
-            Ok(sentences) => sentences,
-            Err(err) => return Some(Err(err)),
-        };
+            .collect::<Vec<_>>();
 
         // Check whether the reader is exhausted.
         if sentences.is_empty() {

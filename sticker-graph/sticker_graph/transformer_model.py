@@ -6,6 +6,14 @@ from tensorflow.contrib.layers import layer_norm
 from sticker_graph.model import Model
 
 
+def layer_shift(x):
+    return x - tf.get_variable("fixup_bias", shape=(), dtype=tf.float32, initializer=tf.initializers.constant(0.))
+
+
+def layer_scale(x, init=1.):
+    return x * tf.get_variable("fixup_scale", shape=(), dtype=tf.float32, initializer=tf.initializers.constant(init))
+
+
 def split_heads(t, num_heads):
     """
     Splits the last dimension of `t` into `num_heads` dimensions and
@@ -34,10 +42,20 @@ def split_heads(t, num_heads):
     return tf.transpose(b_l_h_f, [0, 2, 1, 3])
 
 
-def self_attention(inputs, seq_lens, num_heads):
-    queries = tf.layers.dense(inputs, inputs.shape[-1], use_bias=False)
-    keys = tf.layers.dense(inputs, inputs.shape[-1], use_bias=False)
-    values = tf.layers.dense(inputs, inputs.shape[-1], use_bias=False)
+def self_attention(inputs, seq_lens, num_heads, n_layers):
+    import math
+    import numpy as np
+    # L^{-1/(2m-2)}
+    init = tf.initializers.truncated_normal(stddev=
+                                            math.sqrt(1. / (float(int(inputs.shape[-1])))) * (n_layers * 2) ** (
+                                                    -1. / 6.))
+
+    queries = tf.layers.dense(inputs, inputs.shape[-1], use_bias=False,
+                              kernel_initializer=init)
+    keys = tf.layers.dense(inputs, inputs.shape[-1], use_bias=False,
+                           kernel_initializer=init)
+    values = tf.layers.dense(inputs, inputs.shape[-1], use_bias=False,
+                             kernel_initializer=init)
 
     queries = split_heads(queries, num_heads=num_heads)
     keys = split_heads(keys, num_heads=num_heads)
@@ -52,19 +70,18 @@ def self_attention(inputs, seq_lens, num_heads):
     # inactive timesteps that draw information from active ones don't influence
     # results
     mask_s = tf.logical_not(tf.sequence_mask(seq_lens, tf.shape(inputs)[1]))
-    mask_s = tf.to_float(mask_s[:, tf.newaxis, tf.newaxis]) * -1e38
+    mask_s = tf.to_float(mask_s[:, tf.newaxis, tf.newaxis]) * -1e37
     scores += mask_s
-
-    scores = tf.nn.softmax(scores)
-
+    scores = tf.nn.softmax(scores + 0.0001)
     # apply scores to values
     heads = tf.matmul(scores, values)
 
     # restore [batch, length, num_heads, head] order and rejoin num_heads and head
     heads = tf.reshape(tf.transpose(heads, [0, 2, 1, 3]), tf.shape(inputs))
 
-    outputs = tf.layers.dense(heads, inputs.shape[-1], use_bias=False)
-
+    outputs = tf.layers.dense(heads, inputs.shape[-1],
+                              use_bias=False,
+                              kernel_initializer=tf.initializers.zeros(), )
     return outputs, scores
 
 
@@ -74,7 +91,8 @@ def residual_feedforward_block(inputs,
                                activation,
                                keep_prob_inner,
                                keep_prob_outer,
-                               is_training):
+                               is_training,
+                               n_layers):
     """
     Feedforward block of the transformer. This block upsamples the input
     through a dense non-linear layer before downsampling it to the input
@@ -89,23 +107,44 @@ def residual_feedforward_block(inputs,
     :param is_training: boolean indicator whether dropout will be applied
     :return: dense(activation(dense(inputs))) + inputs
     """
-    inputs = layer_norm(inputs, begin_norm_axis=-1)
-    up = tf.layers.dense(inputs, inner_hsize, activation)
+    shortcut = inputs
+    # `stddev = sqrt(2 / (fan_in + fan_out))`
+    import numpy as np
+    with tf.variable_scope("s1"):
+        inputs = layer_shift(inputs)
+    # init = np.random.normal(scale=math.sqrt(2. / float(inner_hsize + outer_hsize)),
+    #                         size=[outer_hsize, inner_hsize]) * (1. / math.sqrt(n_layers * 2))
+    init = tf.initializers.truncated_normal(stddev=math.sqrt(2. / float(outer_hsize)) * (n_layers * 2) ** (-0.5))
+    up = tf.layers.dense(inputs, inner_hsize,
+                         activation=None,
+                         use_bias=False,
+                         kernel_initializer=init)
+    with tf.variable_scope("s2"):
+        up = layer_shift(up)
+    up = activation(up)
+
     up = tf.contrib.layers.dropout(up,
                                    keep_prob=keep_prob_inner,
                                    is_training=is_training)
-    down = tf.layers.dense(up, units=outer_hsize, use_bias=False)
+    with tf.variable_scope("s3"):
+        up = layer_shift(up)
+    down = tf.layers.dense(up,
+                           units=outer_hsize,
+                           kernel_initializer=tf.initializers.zeros(),
+                           use_bias=False, )
     down = tf.contrib.layers.dropout(down,
                                      keep_prob=keep_prob_outer,
                                      is_training=is_training)
-    return down + inputs
+    with tf.variable_scope("s4"):
+        return layer_scale(down) + shortcut
 
 
 def self_attention_block(inputs,
                          seq_lens,
                          keep_prob_attention,
                          num_heads,
-                         is_training):
+                         is_training,
+                         n_layers):
     """
     Self attention block of the transformer. This block normalizes its inputs
     before applying multi-headed self-attention. The output a tuple. The first
@@ -119,14 +158,16 @@ def self_attention_block(inputs,
     :param is_training: boolean indicator whether dropout will be applied
     :return: self_attention(layer_norm(inputs)) + inputs, alignments
     """
-    inputs = layer_norm(inputs, begin_norm_axis=-1)
+    shortcut = inputs
+    inputs = layer_shift(inputs)
     attention_output, scores = self_attention(inputs=inputs,
                                               seq_lens=seq_lens,
-                                              num_heads=num_heads)
+                                              num_heads=num_heads,
+                                              n_layers=n_layers)
     attention_output = tf.contrib.layers.dropout(attention_output,
                                                  keep_prob=keep_prob_attention,
                                                  is_training=is_training)
-    return attention_output + inputs, scores
+    return layer_scale(attention_output) + shortcut, scores
 
 
 def gelu(t):
@@ -144,7 +185,8 @@ def build_encoder(inputs,
                   seq_lens,
                   activation,
                   config,
-                  is_training):
+                  is_training,
+                  gs):
     """
     Builds the transformer encoder. The encoder consists of multiple layers.
     Each layer consists of a self-attention block, followed by a residual
@@ -174,27 +216,40 @@ def build_encoder(inputs,
     for n in range(num_layers):
         with tf.variable_scope("layer_{}".format(n)):
             with tf.variable_scope("self_attention"):
-                states, scores = self_attention_block(states,
-                                                      seq_lens=seq_lens,
-                                                      keep_prob_attention=keep_prob_attention,
-                                                      num_heads=num_heads,
-                                                      is_training=is_training)
+                with tf.control_dependencies(
+                        [tf.contrib.summary.scalar("max_attn_in", tf.reduce_max(states)),
+                         tf.contrib.summary.scalar("min_attn_in", tf.reduce_min(states))]):
+                    states, scores = self_attention_block(states,
+                                                          seq_lens=seq_lens,
+                                                          keep_prob_attention=keep_prob_attention,
+                                                          num_heads=num_heads,
+                                                          n_layers=num_layers,
+                                                          is_training=is_training)
 
             with tf.variable_scope("feed_forward"):
-                states = residual_feedforward_block(states,
-                                                    inner_hsize=inner_hsize,
-                                                    outer_hsize=outer_hsize,
-                                                    activation=activation,
-                                                    keep_prob_inner=keep_prob_inner,
-                                                    keep_prob_outer=keep_prob_outer,
-                                                    is_training=is_training)
+                with tf.control_dependencies(
+                        [tf.contrib.summary.scalar("max_ff_in", tf.reduce_max(states)),
+                         tf.contrib.summary.scalar("min_ff_in", tf.reduce_min(states))]):
+                    states = residual_feedforward_block(states,
+                                                        inner_hsize=inner_hsize,
+                                                        outer_hsize=outer_hsize,
+                                                        activation=activation,
+                                                        keep_prob_inner=keep_prob_inner,
+                                                        keep_prob_outer=keep_prob_outer,
+                                                        n_layers=num_layers,
+                                                        is_training=is_training)
+                with tf.control_dependencies([
+                    tf.contrib.summary.scalar("max_ff_out_{}".format(n), tf.reduce_max(states), step=gs),
+                    tf.contrib.summary.scalar("min_ff_out_{}".format(n), tf.reduce_min(states), step=gs)
+                ]):
+                    states = tf.identity(states)
 
         alignments.append(scores)
         encoder.append(states)
 
     # normalize output of the last layer
     # https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/transformer_layers.py#L233
-    encoder[-1] = layer_norm(encoder[-1], begin_norm_axis=-1)
+    # encoder[-1] = layer_norm(encoder[-1], begin_norm_axis=-1)
     return encoder, alignments
 
 
@@ -265,7 +320,11 @@ class TransformerModel(Model):
             is_training=self.is_training)
 
         if not config.pass_inputs:
-            inputs = tf.layers.dense(inputs, config.outer_hsize, activation)
+            inputs = tf.layers.dense(inputs,
+                                     config.outer_hsize,
+                                     activation,
+                                     use_bias=False,
+                                     kernel_initializer=tf.initializers.he_uniform())
         else:
             error_msg = "With '--pass_inputs' the last input dimension has " \
                         "to match '--outer_hsize'. OUTER_HSIZE: %d, " \
@@ -279,15 +338,24 @@ class TransformerModel(Model):
             inputs += learned_positionals(config, max_time_batch, depth)
         else:
             inputs += sinusoid(max_time_batch, depth)
+        gs = tf.train.get_or_create_global_step()
 
         hidden_states, alignments = build_encoder(inputs=inputs,
                                                   seq_lens=self.seq_lens,
                                                   activation=activation,
                                                   config=config,
-                                                  is_training=self.is_training, )
+                                                  is_training=self.is_training,
+                                                  gs=gs)
 
-        logits = self.affine_transform(
-            "tag", hidden_states[-1], shapes['n_labels'])
+        with tf.variable_scope("affine"):
+            b = tf.get_variable("bias", shape=(), dtype=tf.float32, initializer=tf.initializers.constant(0.))
+            s = tf.get_variable("scale", shape=(), dtype=tf.float32, initializer=tf.initializers.constant(1.))
+            h = s * (hidden_states[-1] - b)
+            logits = tf.layers.dense(h, shapes['n_labels'], use_bias=False)
+            # bias_initializer=tf.initializers.constant(np.log(np.array(shapes['counts'],
+            #                                                                                    dtype=np.float32)+0.0001),
+            #                                                                    verify_shape=True)
+
         if config.crf:
             loss, transitions = self.crf_loss(
                 "tag", logits, self.tags)
@@ -299,13 +367,34 @@ class TransformerModel(Model):
             predictions = self.predictions("tag", logits)
             self.top_k_predictions("tag", logits, config.top_k)
 
-        self.accuracy("tag", predictions, self.tags)
+        acc = self.accuracy("tag", predictions, self.tags)
 
         # Optimization with gradient clipping. Consider making the gradient
         # norm a placeholder as well.
         lr = tf.placeholder(tf.float32, [], "lr")
+        lr = tf.maximum(tf.cond(gs < 250, lambda: ((lr - 1e-07) / 250.) * tf.to_float(gs), lambda: lr), 1e-07)
         optimizer = tf.train.AdamOptimizer(lr)
         gradients, variables = zip(*optimizer.compute_gradients(loss))
         gradients, gn = tf.clip_by_global_norm(gradients, 2.5)
+
+        gs = tf.train.get_or_create_global_step()
+
+        train_summaries = [tf.contrib.summary.scalar("loss", loss, step=gs, family="train"),
+                           tf.contrib.summary.scalar("acc", acc, step=gs, family="train"),
+                           tf.contrib.summary.scalar("lr", lr, step=gs, family="train"),
+                           tf.contrib.summary.scalar("gradient_norm", gn, step=gs, family="train")]
+
+
+        val_gs = tf.Variable(0, trainable=False, dtype=tf.int64, name="val_gs")
+
+        with tf.control_dependencies([val_gs.assign_add(1)]):
+            val_summaries = [tf.contrib.summary.scalar("loss", loss, step=tf.convert_to_tensor(val_gs), family="val"),
+                             tf.contrib.summary.scalar("acc", acc, step=tf.convert_to_tensor(val_gs),
+                                                       family="val")]
+
+        with tf.variable_scope("summaries"):
+            self.train_summaries = tf.group(train_summaries, name="train")
+            self.val_summaries = tf.group(val_summaries, name="val")
+
         self._train_op = optimizer.apply_gradients(
-            zip(gradients, variables), name="train")
+            zip(gradients, variables), name="train", global_step=gs)
