@@ -19,6 +19,7 @@ impl ToString for DependencyEncoding<RelativePosition> {
     }
 }
 
+
 /// Relative position encoder.
 ///
 /// This encoder encodes dependency relations as token labels. The
