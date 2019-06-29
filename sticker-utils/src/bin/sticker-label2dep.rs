@@ -7,7 +7,7 @@ use conllx::io::{ReadSentence, Reader, WriteSentence, Writer};
 use stdinout::{Input, OrExit, Output};
 
 use conllx::graph::Node;
-use sticker::depparse::{RelativePOSEncoder, RelativePositionEncoder};
+use sticker::depparse::{RelativePOSEncoder, RelativePositionEncoder, RelativePOS, DependencyEncoding};
 use sticker::tensorflow::{Tagger, TaggerGraph};
 use sticker::EncodingProb;
 use sticker::{CategoricalEncoder, LayerEncoder, Numberer, SentVectorizer, SentenceDecoder};
@@ -61,11 +61,10 @@ fn process_with_decoder<D, R, W>(config: &Config, decoder: D, read: R, mut write
 where
     D: SentenceDecoder,
     D::Encoding: Clone + Eq + Hash,
-
     R: ReadSentence,
     W: WriteSentence,
 {
-    let labels = config.labeler.load_labels().or_exit(
+    let labels  = config.labeler.load_labels().or_exit(
         format!("Cannot load label file '{}'", config.labeler.labels),
         1,
     );
@@ -74,27 +73,30 @@ where
 
     for sentence in read.sentences() {
         let mut sentence = sentence.or_exit("Cannot parse sentence", 1);
-        DependencyEncoding::new();
-        let labels = sentence
+        let labels : Vec<Vec<EncodingProb<_>>> = sentence
             .iter()
             .filter(|&t |t.is_token())
             .map(|&t| {
-                vec!(EncodingProb::new(
-                    &labels.number(
-                        &t.token()
-                            .unwrap()
-                            .features()
-                            .unwrap()
-                            .as_map()
-                            .get("deplabel")
-                            .cloned()
-                            .unwrap()
-                            .unwrap(),
-                    ).unwrap(),
-                    1.0,
-                ))
+                let enc = &t.token()
+                    .unwrap()
+                    .features()
+                    .unwrap()
+                    .as_map()
+                    .get("deplabel")
+                    .cloned()
+                    .unwrap()
+                    .unwrap().split("/");
+                let rel = enc.next().unwrap();
+                let pos = enc.next().unwrap();
+                let dist = enc.next();
+                let rel_pos = RelativePOS::new(pos, dist.unwrap().parse().unwrap());
+                let denc : DependencyEncoding<RelativePOS> = DependencyEncoding {
+                    head : rel_pos,
+                    label : rel.to_string()
+                };
+                vec!(EncodingProb::new(&labels.number(&denc).unwrap(),1.0,))
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<Vec<_>>>();
         decoder.decode(&labels, &mut sentence);
         write.write_sentence(&sentence);
     }

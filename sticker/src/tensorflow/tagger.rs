@@ -290,7 +290,7 @@ where
             let probs = &probs_tensor[offset..offset + seq_len * k];
 
             // Get the label numbers with their probabilities.
-            let encoded = seq
+            let encoded : Vec<Vec<EncodingProb<usize>>>= seq
                 .iter()
                 .zip(probs)
                 .chunks(k)
