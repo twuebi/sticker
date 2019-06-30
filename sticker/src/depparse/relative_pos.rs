@@ -37,8 +37,6 @@ impl ToString for DependencyEncoding<RelativePOS> {
     }
 }
 
-
-
 /// Relative part-of-speech position encoder.
 ///
 /// This encoder encodes dependency relations as token labels. The
