@@ -29,7 +29,7 @@ where
     ///
     /// This constructor takes an owned encoding.
     #[allow(dead_code)]
-    pub(crate) fn new_from_owned(encoding: E::Owned, prob: f32) -> Self {
+    pub fn new_from_owned(encoding: E::Owned, prob: f32) -> Self {
         EncodingProb {
             encoding: Cow::Owned(encoding),
             prob,
