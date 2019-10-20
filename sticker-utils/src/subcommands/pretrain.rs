@@ -210,7 +210,12 @@ impl PretrainApp {
         let mut loss = 0f32;
         let mut internal_global_step = global_step;
         for batch in dataset
-            .batches(encoder, vectorizer, config.model.batch_size, self.max_len)
+            .batches(
+                encoder,
+                vectorizer,
+                config.model.batch_size,
+                self.max_len,
+            )
             .or_exit("Cannot read batches", 1)
         {
             let tensors = batch.or_exit("Cannot read batch", 1).into_parts();

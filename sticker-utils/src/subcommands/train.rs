@@ -96,7 +96,12 @@ impl TrainApp {
         let mut loss = 0f32;
 
         for batch in dataset
-            .batches(encoder, vectorizer, config.model.batch_size, self.max_len)
+            .batches(
+                encoder,
+                vectorizer,
+                config.model.batch_size,
+                self.max_len,
+            )
             .or_exit("Cannot read batches", 1)
         {
             let lr = lr_scheduler.compute_step_learning_rate(global_step);
