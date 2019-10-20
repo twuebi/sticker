@@ -5,6 +5,8 @@ use std::usize;
 use conllx::graph::Sentence;
 use conllx::io::{ReadSentence, Reader};
 use failure::{Error, Fallible};
+use rand::{RngCore, SeedableRng};
+use rand_xorshift::XorShiftRng;
 
 use super::tensor::{LabelTensor, TensorBuilder};
 use crate::encoder::{CategoricalEncoder, SentenceEncoder};
@@ -35,6 +37,7 @@ where
         vectorizer: &'a SentVectorizer,
         batch_size: usize,
         max_len: usize,
+        buffer: usize,
     ) -> Fallible<Self::Iter>;
 }
 
@@ -62,18 +65,19 @@ where
         vectorizer: &'a SentVectorizer,
         batch_size: usize,
         max_len: usize,
+        shuffle_buffer_size: usize,
     ) -> Fallible<Self::Iter> {
         // Rewind to the beginning of the data (if necessary).
         self.0.seek(SeekFrom::Start(0))?;
 
         let reader = Reader::new(BufReader::new(&mut self.0));
 
-
+        let sentence_iter = get_sentence_iter(reader, shuffle_buffer_size, max_len);
 
         Ok(ConllxIter {
             batch_size,
             encoder,
-            sentences: get_sentence_iter(reader, max_len),
+            sentences: sentence_iter,
             vectorizer,
         })
     }
@@ -151,6 +155,7 @@ where
 
 /// Trait providing adapters for `conllx::io::Sentences`.
 pub trait SentenceIter: Sized {
+    fn shuffle(self, buffer_size: usize) -> Shuffled<Self>;
     fn filter_by_len(self, max_len: usize) -> LengthFilter<Self>;
 }
 
@@ -158,6 +163,15 @@ impl<I> SentenceIter for I
 where
     I: Iterator<Item = Result<Sentence, Error>>,
 {
+    fn shuffle(self, buffer_size: usize) -> Shuffled<I> {
+        Shuffled {
+            inner: self,
+            buffer: Vec::with_capacity(buffer_size),
+            buffer_size,
+            shuffler: XorShiftRng::from_entropy(),
+        }
+    }
+
     fn filter_by_len(self, max_len: usize) -> LengthFilter<Self> {
         LengthFilter {
             inner: self,
@@ -190,21 +204,97 @@ where
     }
 }
 
+/// An Iterator adapter performing local shuffling.
+///
+/// Fills a buffer with size `buffer_size` on the first call. Subsequent
+/// calls swap the next incoming item with a random element from the
+/// buffer and return the random element.
+pub struct Shuffled<I> {
+    inner: I,
+    buffer: Vec<Result<Sentence, Error>>,
+    buffer_size: usize,
+    shuffler: XorShiftRng,
+}
+
+impl<I> Iterator for Shuffled<I>
+where
+    I: Iterator<Item = Result<Sentence, Error>>,
+{
+    type Item = Result<Sentence, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buffer.is_empty() {
+            eprintln!(
+                "Filling buffer for shuffling. Buffer size: {}",
+                self.buffer_size
+            );
+            while let Some(sent) = self.inner.next() {
+                self.buffer.push(sent);
+                if self.buffer.len() == self.buffer_size {
+                    break;
+                }
+            }
+        }
+
+        let sent = match self.inner.next() {
+            Some(mut sent) => {
+                let buffer_len = self.buffer.len();
+                std::mem::swap(
+                    &mut self.buffer[self.shuffler.next_u64() as usize % buffer_len],
+                    &mut sent,
+                );
+                sent
+            }
+            None => {
+                // if the buffer is empty, we know that `inner` is exhausted and return None.
+                let mut sent = self.buffer.pop()?;
+
+                // if the buffer is empty after taking the last item skip swapping the item
+                // to avoid indexing into an empty Vec.
+                if !self.buffer.is_empty() {
+                    let buffer_len = self.buffer.len();
+                    std::mem::swap(
+                        &mut self.buffer[self.shuffler.next_u64() as usize % buffer_len],
+                        &mut sent,
+                    )
+                }
+                sent
+            }
+        };
+        Some(sent)
+    }
+}
+
 /// Returns an `Iterator` over `Result<Sentence, Error>`.
 ///
 /// Depending on the parameters the returned iterator filters
-/// sentences by their lengths or returns the sentences in
-/// sequence without filtering them.
+/// sentences by their lengths, performs shuffling or returns
+/// the sentences in sequence without filtering.
+///
+/// If `max_len` < `usize::MAX` and `shuffle_buffer_size` > 0
+/// sentences with length < `max_len` are filtered before being
+/// shuffled using a buffer with size `shuffle_buffer_size`.
 ///
 /// If `max_len` == `usize::MAX`, no filtering is performed.
+/// If `shuffle_buffer_size` == `0`no shuffling is performed.
 fn get_sentence_iter<'a, R>(
     reader: R,
     max_len: usize,
+    shuffle_buffer_size: usize,
 ) -> Box<dyn Iterator<Item = Result<Sentence, Error>> + 'a>
 where
     R: ReadSentence + 'a,
 {
-    if max_len < usize::MAX {
+    if shuffle_buffer_size > 0 && max_len < usize::MAX {
+        Box::new(
+            reader
+                .sentences()
+                .filter_by_len(max_len)
+                .shuffle(shuffle_buffer_size),
+        )
+    } else if shuffle_buffer_size > 0 {
+        Box::new(reader.sentences().shuffle(shuffle_buffer_size))
+    } else if max_len < usize::MAX {
         Box::new(reader.sentences().filter_by_len(max_len))
     } else {
         Box::new(reader.sentences())

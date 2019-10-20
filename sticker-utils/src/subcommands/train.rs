@@ -28,6 +28,7 @@ static LR_PATIENCE: &str = "LR_PATIENCE";
 static MAX_LEN: &str = "MAX_LEN";
 static CONTINUE: &str = "CONTINUE";
 static PATIENCE: &str = "PATIENCE";
+static SHUFFLE: &str = "SHUFFLE";
 static WARMUP: &str = "WARMUP";
 static TRAIN_DATA: &str = "TRAIN_DATA";
 static VALIDATION_DATA: &str = "VALIDATION_DATA";
@@ -44,6 +45,7 @@ pub struct TrainApp {
     config: String,
     lr_schedule: LrSchedule,
     max_len: usize,
+    shuffle_buffer_size: usize,
     parameters: Option<String>,
     patience: usize,
     saver: BestEpochSaver<f32>,
@@ -101,6 +103,7 @@ impl TrainApp {
                 vectorizer,
                 config.model.batch_size,
                 self.max_len,
+                self.shuffle_buffer_size,
             )
             .or_exit("Cannot read batches", 1)
         {
@@ -299,6 +302,12 @@ impl StickerApp for TrainApp {
                     .help("Ignore sentences longer than N tokens"),
             )
             .arg(
+                Arg::with_name(SHUFFLE)
+                    .long("shuffle_buffer")
+                    .value_name("N")
+                    .help("Buffer size used for shuffling. 0 means no shuffling."),
+            )
+            .arg(
                 Arg::with_name(PATIENCE)
                     .long("patience")
                     .value_name("N")
@@ -347,6 +356,10 @@ impl StickerApp for TrainApp {
             .value_of(MAX_LEN)
             .map(|v| v.parse().or_exit("Cannot parse maximum sentence length", 1))
             .unwrap_or(usize::MAX);
+        let shuffle_buffer_size = matches
+            .value_of(SHUFFLE)
+            .map(|v| v.parse().or_exit("Cannot parse shuffle buffer size", 1))
+            .unwrap_or(0);
         let parameters = matches.value_of(CONTINUE).map(ToOwned::to_owned);
         let patience = matches
             .value_of(PATIENCE)
@@ -375,6 +388,7 @@ impl StickerApp for TrainApp {
             },
             max_len,
             saver,
+            shuffle_buffer_size,
             train_data,
             validation_data,
             logdir,
