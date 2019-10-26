@@ -12,6 +12,6 @@ pub use self::tagger::{ModelConfig, Tagger, TaggerGraph};
 mod trainer;
 pub use self::trainer::TaggerTrainer;
 
-mod tensor;
+pub mod tensor;
 
 mod util;

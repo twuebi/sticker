@@ -5,16 +5,19 @@ use std::usize;
 
 use clap::{App, Arg, ArgMatches};
 use failure::{Error, Fallible};
-use indicatif::ProgressStyle;
+use indicatif::{ProgressBar, ProgressStyle};
 use ordered_float::NotNan;
 use stdinout::OrExit;
 use sticker::encoder::deprel::{RelativePOSEncoder, RelativePositionEncoder};
 use sticker::encoder::layer::LayerEncoder;
 use sticker::encoder::{CategoricalEncoder, SentenceEncoder};
 use sticker::serialization::CborRead;
+use sticker::tensorflow::tensor::Tensors;
 use sticker::tensorflow::{ConllxDataSet, DataSet, TaggerGraph, TaggerTrainer};
 use sticker::wrapper::{Config, EncoderType, LabelerType, TomlRead};
 use sticker::{Numberer, SentVectorizer};
+use ndarray::{Ix1, Ix2, Ix3};
+use ndarray_tensorflow::NdTensor;
 
 use crate::progress::ReadProgress;
 use crate::save::{CompletedUnit, EpochAndBatchesSaver, EpochSaver, Save};
@@ -128,6 +131,21 @@ impl PretrainApp {
         let mut global_step = 0;
 
         for epoch in 0..self.epochs {
+            let read_progress = ReadProgress::new(validation_file.try_clone()?)
+                .or_exit("Cannot create progress bar", 1);
+            let mut dataset = ConllxDataSet::new(read_progress);
+
+            let val_batches = dataset
+                .batches(
+                    &mut categorical_encoder,
+                    &vectorizer,
+                    self.batch_size,
+                    self.max_len,
+                )
+                .or_exit("Cannot read batches", 1)
+                .map(|x| x.unwrap().into_parts())
+                .collect::<Vec<Tensors<_>>>();
+
             let (loss, acc, global_step_after_epoch) = self.run_epoch(
                 &mut saver,
                 &mut categorical_encoder,
@@ -138,37 +156,26 @@ impl PretrainApp {
                 train_size,
                 global_step,
                 epoch,
+                val_batches,
             )?;
             global_step = global_step_after_epoch;
             eprintln!("Epoch {} (train, loss: {:.4}, acc: {:.4}", epoch, loss, acc);
-
-            let (loss, acc, _) = self.run_epoch(
-                &mut saver,
-                &mut categorical_encoder,
-                &vectorizer,
-                &trainer,
-                &mut validation_file,
-                false,
-                train_size,
-                global_step,
-                epoch,
-            )?;
-
-            saver
-                .save(&trainer, CompletedUnit::Epoch(acc))
-                .or_exit("Error saving model", 1);
-
-            if acc > best_acc {
-                best_epoch = epoch;
-                best_acc = acc;
-            }
-
-            let epoch_status = if best_epoch == epoch { "🎉" } else { "" };
-
-            eprintln!(
-            "Epoch {} (validation): loss: {:.4}, acc: {:.4}, best epoch: {}, best acc: {:.4} {}",
-            epoch, loss, acc, best_epoch, best_acc, epoch_status
-        );
+            //
+            //            saver
+            //                .save(&trainer, CompletedUnit::Epoch(acc))
+            //                .or_exit("Error saving model", 1);
+            //
+            //            if acc > best_acc {
+            //                best_epoch = epoch;
+            //                best_acc = acc;
+            //            }
+            //
+            //            let epoch_status = if best_epoch == epoch { "🎉" } else { "" };
+            //
+            //            eprintln!(
+            //            "Epoch {} (validation): loss: {:.4}, acc: {:.4}, best epoch: {}, best acc: {:.4} {}",
+            //            epoch, loss, acc, best_epoch, best_acc, epoch_status
+            //        );
         }
 
         Ok(())
@@ -186,6 +193,7 @@ impl PretrainApp {
         train_size: usize,
         global_step: usize,
         epoch: usize,
+        val_set: Vec<Tensors<NdTensor<i32, Ix2>>>,
     ) -> Result<(f32, f32, usize), Error>
     where
         E: SentenceEncoder,
@@ -207,48 +215,34 @@ impl PretrainApp {
         let mut acc = 0f32;
         let mut loss = 0f32;
         let mut internal_global_step = global_step;
+
         for batch in dataset
             .batches(encoder, vectorizer, self.batch_size, self.max_len)
             .or_exit("Cannot read batches", 1)
         {
             let tensors = batch.or_exit("Cannot read batch", 1).into_parts();
 
-            let batch_perf = if is_training {
-                let lr = if internal_global_step < self.warmup_steps {
-                    (self.initial_lr.into_inner() / (self.warmup_steps as f32))
-                        * internal_global_step as f32
-                } else {
-                    let bytes_done =
-                        (epoch * train_size) + file.seek(SeekFrom::Current(0))? as usize;
-                    let lr_scale = 1f32 - (bytes_done as f32 / (self.epochs * train_size) as f32);
-                    lr_scale * self.initial_lr.into_inner()
-                };
-
-                let batch_perf = trainer.train(
-                    &tensors.seq_lens,
-                    &tensors.inputs,
-                    tensors.subwords.as_ref(),
-                    &tensors.labels,
-                    lr,
-                );
-                progress_bar.set_message(&format!(
-                    "lr: {:.6}, loss: {:.4}, accuracy: {:.4}",
-                    lr, batch_perf.loss, batch_perf.accuracy
-                ));
-                batch_perf
+            let lr = if internal_global_step < self.warmup_steps {
+                (self.initial_lr.into_inner() / (self.warmup_steps as f32))
+                    * internal_global_step as f32
             } else {
-                let batch_perf = trainer.validate(
-                    &tensors.seq_lens,
-                    &tensors.inputs,
-                    tensors.subwords.as_ref(),
-                    &tensors.labels,
-                );
-                progress_bar.set_message(&format!(
-                    "batch loss: {:.4}, batch accuracy: {:.4}",
-                    batch_perf.loss, batch_perf.accuracy
-                ));
-                batch_perf
+                let bytes_done =
+                    (epoch * train_size) + file.seek(SeekFrom::Current(0))? as usize;
+                let lr_scale = 1f32 - (bytes_done as f32 / (self.epochs * train_size) as f32);
+                lr_scale * self.initial_lr.into_inner()
             };
+
+            let batch_perf = trainer.train(
+                &tensors.seq_lens,
+                &tensors.inputs,
+                tensors.subwords.as_ref(),
+                &tensors.labels,
+                lr,
+            );
+            progress_bar.set_message(&format!(
+                "lr: {:.6}, loss: {:.4}, accuracy: {:.4}",
+                lr, batch_perf.loss, batch_perf.accuracy
+            ));
 
             let n_tokens = tensors.seq_lens.view().iter().sum::<i32>();
             loss += n_tokens as f32 * batch_perf.loss;
@@ -262,12 +256,59 @@ impl PretrainApp {
                     .save(trainer, CompletedUnit::Batch(batch_perf.accuracy))
                     .or_exit("Error saving model", 1);
             }
+
+            let eval_perf = if internal_global_step % 10000 == 0 {
+                self.run_eval(&val_set, &trainer)?;
+            };
         }
 
         loss /= instances as f32;
         acc /= instances as f32;
 
         Ok((loss, acc, internal_global_step))
+    }
+
+    fn run_eval (
+        &self,
+        eval_batches: &Vec<Tensors<NdTensor<i32, Ix2>>>,
+        trainer: &TaggerTrainer,
+    ) -> Result<(f32, f32), Error>
+    where
+    {
+        let mut instances = 0;
+        let mut acc = 0f32;
+        let mut loss = 0f32;
+
+        eprintln!("Validating");
+//        let progress_bar = ProgressBar::new(eval_batches.len() as u64);
+//
+//        progress_bar.set_style(ProgressStyle::default_bar().template(&format!(
+//            "[Time: {{elapsed_precise}}, ETA: {{eta_precise}}] {{bar}} {{percent}}% {} {{msg}}",
+//            "Val"
+//        )));
+
+        for tensors in eval_batches {
+            let batch_perf = trainer.validate(
+                &tensors.seq_lens,
+                &tensors.inputs,
+                tensors.subwords.as_ref(),
+                &tensors.labels,
+            );
+            //progress_bar.set_message(&format!(
+            //    "batch loss: {:.4}, batch accuracy: {:.4}",
+            //    batch_perf.loss, batch_perf.accuracy
+            //));
+
+            let n_tokens = tensors.seq_lens.view().iter().sum::<i32>();
+            loss += n_tokens as f32 * batch_perf.loss;
+            acc += n_tokens as f32 * batch_perf.accuracy;
+            instances += n_tokens;
+        }
+
+        loss /= instances as f32;
+        acc /= instances as f32;
+        eprintln!("Val loss: {:.4} val_acc: {:.4}\n",loss, acc);
+        Ok((loss, acc))
     }
 }
 

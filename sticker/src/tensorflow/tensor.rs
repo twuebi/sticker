@@ -5,7 +5,7 @@ use ndarray_tensorflow::NdTensor;
 
 use crate::InputVector;
 
-mod labels {
+pub mod labels {
     pub trait Labels {
         fn from_shape(batch_size: usize, time_steps: usize) -> Self;
     }

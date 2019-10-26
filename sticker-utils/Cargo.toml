@@ -30,3 +30,5 @@ threadpool = "1"
 sticker = { path = "../sticker", version = "0.10.0" }
 tensorflow = "0.13"
 toml = "0.5"
+ndarray = "0.12"
+ndarray-tensorflow = "0.2"
