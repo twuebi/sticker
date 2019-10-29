@@ -36,6 +36,19 @@ if __name__ == '__main__':
         default=False,
         help="Use residual skip connections between RNN layers."
     )
+    parser.add_argument(
+        "--dense_dims",
+        default=256,
+        type=int,
+        help=""
+    )
+    
+    parser.add_argument(
+        "--dense_keep_prob",
+        default=0.5,
+        type=float,
+        help=""
+    )
     args = parser.parse_args()
 
     create_graph(RNNModel, args)

@@ -23,6 +23,11 @@ class RNNModel(Model):
             seq_lens=self._seq_lens,
             gru=args.gru,
             residual_connections=args.residual)
+        if self.args.dense_dims > 0:
+            hidden_states = tf.contrib.layers.dropout(hidden_states,
+                                                  keep_prob=self.args.dense_keep_prob,
+                                                  is_training=self.is_training)
+            hidden_states = tf.layers.dense(hidden_states, self.args.dense_dims, tf.nn.relu,use_bias=True)
 
         hidden_states = batch_norm(
             hidden_states,
