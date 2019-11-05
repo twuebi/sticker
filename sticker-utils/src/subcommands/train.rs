@@ -3,7 +3,7 @@ use std::hash::Hash;
 use std::io::BufReader;
 use std::usize;
 
-use clap::{App, Arg, ArgMatches};
+use clap::{App, Arg, ArgGroup, ArgMatches};
 use failure::{Error, Fallible};
 use indicatif::ProgressStyle;
 use ordered_float::NotNan;
@@ -24,6 +24,8 @@ use crate::save::{BestEpochSaver, CompletedUnit, Save};
 use crate::traits::{StickerApp, StickerTrainApp};
 
 static INITIAL_LR: &str = "INITIAL_LR";
+static PLATEAU: &str = "PLATEAU";
+static PLATEAU_GROUP: &str = "PLATEAU_GROUP";
 static LR_SCALE: &str = "LR_SCALE";
 static LR_PATIENCE: &str = "LR_PATIENCE";
 static MAX_LEN: &str = "MAX_LEN";
@@ -34,6 +36,10 @@ static WARMUP: &str = "WARMUP";
 static TRAIN_DATA: &str = "TRAIN_DATA";
 static VALIDATION_DATA: &str = "VALIDATION_DATA";
 static LOGDIR: &str = "LOGDIR";
+static EXPONENTIAL: &str = "EXPONENTIAL";
+static EXPONENTIAL_GROUP: &str = "EXPONENTIAL_GROUP";
+static DECAY_RATE: &str = "DECAY_RATE";
+static DECAY_STEPS: &str = "DECAY_STEPS";
 
 pub struct LrSchedule {
     pub initial_lr: NotNan<f32>,
@@ -275,24 +281,69 @@ impl StickerApp for TrainApp {
                 Arg::with_name(WARMUP)
                     .long("warmup")
                     .value_name("N")
+                    .default_value("0")
                     .help(
                         "For the first N timesteps, the learning rate is linearly scaled up to LR.",
-                    )
-                    .default_value("0"),
+                    ),
+            )
+            .group(ArgGroup::with_name("schedule").required(true))
+            .arg(
+                Arg::with_name(PLATEAU)
+                    .long("plateau")
+                    .help("Plateau learning rate schedule")
+                    .group("schedule")
+                    .requires(PLATEAU_GROUP),
+            )
+            .group(
+                ArgGroup::with_name(PLATEAU_GROUP)
+                    .multiple(true)
+                    .conflicts_with_all(&[EXPONENTIAL, EXPONENTIAL_GROUP])
+                    .requires(PLATEAU),
             )
             .arg(
                 Arg::with_name(LR_PATIENCE)
                     .long("lr-patience")
                     .value_name("N")
                     .help("Scale learning rate after N epochs without improvement")
-                    .default_value("4"),
+                    .group(PLATEAU_GROUP)
+                    .default_value_if(PLATEAU, None, "5"),
             )
             .arg(
                 Arg::with_name(LR_SCALE)
                     .long("lr-scale")
                     .value_name("SCALE")
                     .help("Value to scale the learning rate by")
-                    .default_value("0.5"),
+                    .group(PLATEAU_GROUP)
+                    .default_value_if(PLATEAU, None, "0.5"),
+            )
+            .arg(
+                Arg::with_name(EXPONENTIAL)
+                    .long("exponential")
+                    .help("Exponential learning rate schedule")
+                    .group("schedule")
+                    .requires(EXPONENTIAL_GROUP),
+            )
+            .group(
+                ArgGroup::with_name(EXPONENTIAL_GROUP)
+                    .multiple(true)
+                    .conflicts_with_all(&[PLATEAU, PLATEAU_GROUP])
+                    .requires(EXPONENTIAL),
+            )
+            .arg(
+                Arg::with_name(DECAY_RATE)
+                    .long("decay-rate")
+                    .value_name("RATE")
+                    .help("coefficient of the exponential decay")
+                    .group(EXPONENTIAL_GROUP)
+                    .default_value_if(EXPONENTIAL, None, "0.998"),
+            )
+            .arg(
+                Arg::with_name(DECAY_STEPS)
+                    .long("decay-steps")
+                    .value_name("STEPS")
+                    .help("global_step / steps is the exponent of the decay_rate")
+                    .group(EXPONENTIAL_GROUP)
+                    .default_value_if(EXPONENTIAL, None, "100"),
             )
             .arg(
                 Arg::with_name(MAX_LEN)

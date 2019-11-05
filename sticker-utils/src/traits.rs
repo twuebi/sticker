@@ -3,6 +3,7 @@ use clap::{crate_version, App, AppSettings, Arg, ArgMatches};
 static DEFAULT_CLAP_SETTINGS: &[AppSettings] = &[
     AppSettings::DontCollapseArgsInUsage,
     AppSettings::UnifiedHelpMessage,
+    AppSettings::DeriveDisplayOrder,
 ];
 
 pub trait StickerApp {
